@@ -44,6 +44,14 @@ button:hover{border-color:var(--accent);color:var(--accent)}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
 .age{font:400 12px/1 "IBM Plex Mono",monospace;color:var(--ink-3);margin-left:auto}
+.note{margin:0;padding:10px 18px;border-bottom:1px solid var(--line);font-size:12px;
+  line-height:1.5;color:var(--ink-3);background:var(--bg)}
+.legend{display:block;margin-bottom:5px;color:var(--ink-2);font-weight:500}
+.sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin:0 5px 0 0;
+  vertical-align:baseline;border:2px solid}
+.sw.hot{background:#5AA7FF;border-color:#0A63C9}
+.sw.cold{background:#C3CDD7;border-color:#8A97A3;margin-left:12px}
+.stn.dim .cnum{background:var(--ink-3)}
 #list{flex:1;overflow-y:auto}
 .stn{display:flex;gap:11px;padding:12px 18px;border-bottom:1px solid var(--line);cursor:pointer;align-items:flex-start}
 .stn:hover,.stn.on{background:var(--accent-soft)}
@@ -76,8 +84,14 @@ button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--acc
     <div class="bar">
       <button id="refresh">Refresh</button>
       <button id="near" aria-pressed="false">Nearest me</button>
+      <button id="chg" aria-pressed="false">Charging docks</button>
       <span class="age" id="age"></span>
     </div>
+    <p class="note">
+      <span class="legend"><i class="sw hot"></i>charging dock <i class="sw cold"></i>plain dock</span>
+      Battery level isn&rsquo;t in the public feed &mdash; nobody can show it. A bike on a
+      charging dock has likely been topping up, but one that just arrived may still be low.
+    </p>
     <div id="list"><p class="msg">Fetching live data&hellip;</p></div>
   </div>
   <div id="map"></div>
@@ -96,7 +110,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const norm = s => s.toLowerCase().split(/\s+/).join(' ');
 
-let info = null, rows = [], fetchedAt = null, here = null, markers = {};
+let info = null, rows = [], fetchedAt = null, here = null, markers = {}, chgOnly = false;
 
 const map = L.map('map');
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -152,25 +166,33 @@ async function load(){
 }
 
 function render(){
-  const total = rows.reduce((a, r) => a + r.n, 0);
-  $('nbikes').textContent = total;
-  $('nstn').textContent = `bikes at ${rows.length} station${rows.length === 1 ? '' : 's'}`;
-
   if (here) rows.forEach(r => r.d = km(here, [r.lat, r.lon]));
-  rows.sort(here ? (a,b) => a.d - b.d : (a,b) => b.n - a.n || a.name.localeCompare(b.name));
+  const view = chgOnly ? rows.filter(r => r.charging) : rows;
+  view.sort(here ? (a,b) => a.d - b.d : (a,b) => b.n - a.n || a.name.localeCompare(b.name));
+
+  const total = view.reduce((a, r) => a + r.n, 0);
+  const onChg = rows.filter(r => r.charging).reduce((a, r) => a + r.n, 0);
+  $('nbikes').textContent = total;
+  $('nstn').textContent = chgOnly
+    ? `on charging docks, of ${rows.reduce((a,r) => a + r.n, 0)} total`
+    : `bikes at ${view.length} station${view.length === 1 ? '' : 's'} · ${onChg} charging`;
 
   Object.values(markers).forEach(m => m.remove());
   markers = {};
-  rows.forEach(r => {
+  view.forEach(r => {
+    // No battery data exists in the feed, so charging-dock status is the only
+    // charge signal available: saturated = likely topped up, muted = unknown.
+    const style = !r.renting ? {color:'#B3261E', fillColor:'#F2B8B5', fillOpacity:.85}
+                : r.charging ? {color:'#0A63C9', fillColor:'#5AA7FF', fillOpacity:.9}
+                             : {color:'#8A97A3', fillColor:'#C3CDD7', fillOpacity:.75};
     const m = L.circleMarker([r.lat, r.lon], {
-      radius: 8 + Math.min(r.n, 5) * 2.2, weight: 2,
-      color: r.renting ? '#0A63C9' : '#B3261E',
-      fillColor: r.renting ? '#5AA7FF' : '#F2B8B5', fillOpacity: .85
+      radius: 8 + Math.min(r.n, 5) * 2.2, weight: 2, ...style
     }).addTo(map);
     m.bindPopup(
       `<b>${esc(r.name)}</b><br>${r.addr ? esc(r.addr)+'<br>' : ''}` +
       `<b>${r.n}</b> ${esc(TYPE)} &middot; ${r.docks} dock${r.docks===1?'':'s'} free<br>` +
-      (r.charging ? '&#9889; charging dock<br>' : '') +
+      (r.charging ? '&#9889; charging dock &mdash; likely topped up<br>'
+                  : '<span style="color:#8A97A3">plain dock &mdash; charge unknown</span><br>') +
       (r.renting ? '' : '<span style="color:#B3261E">not renting</span><br>') +
       `<a href="https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lon}" ` +
       `target="_blank" rel="noopener">Directions &rarr;</a>`);
@@ -180,13 +202,13 @@ function render(){
   // Leaflet sizes itself at init; if the container was still collapsing into
   // its flex row then, fitBounds solves against a zero-size box and lands on
   // world zoom. Re-measure first.
-  if (rows.length){
+  if (view.length){
     map.invalidateSize();
     map.fitBounds(L.featureGroup(Object.values(markers)).getBounds().pad(.08));
   }
 
-  $('list').innerHTML = rows.length ? rows.map(r => `
-    <div class="stn" data-id="${r.id}">
+  $('list').innerHTML = view.length ? view.map(r => `
+    <div class="stn${r.charging ? '' : ' dim'}" data-id="${r.id}">
       <div class="cnum">${r.n}</div>
       <div class="sb">
         <div class="snm">${esc(r.name)}</div>
@@ -197,7 +219,10 @@ function render(){
       </div>
       ${r.d != null ? `<div class="dist">${r.d < 1 ? Math.round(r.d*1000)+' m' : r.d.toFixed(1)+' km'}</div>` : ''}
     </div>`).join('')
-    : `<p class="msg">No ${esc(TYPE)} bikes docked anywhere right now.</p>`;
+    : chgOnly
+      ? `<p class="msg">No ${esc(TYPE)} bikes on a charging dock right now.
+         ${rows.length} are sitting at plain docks &mdash; switch the filter off to see them.</p>`
+      : `<p class="msg">No ${esc(TYPE)} bikes docked anywhere right now.</p>`;
 
   document.querySelectorAll('.stn').forEach(el => el.addEventListener('click', () => {
     const m = markers[el.dataset.id];
@@ -215,6 +240,12 @@ function tickAge(){
 }
 
 $('refresh').addEventListener('click', load);
+
+$('chg').addEventListener('click', e => {
+  chgOnly = !chgOnly;
+  e.currentTarget.setAttribute('aria-pressed', String(chgOnly));
+  render();
+});
 
 $('near').addEventListener('click', e => {
   const btn = e.currentTarget;
