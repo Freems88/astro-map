@@ -266,6 +266,14 @@ $('near').addEventListener('click', e => {
   );
 });
 
+// Leaflet caches its container size, so a viewport change (phone rotation,
+// desktop resize) leaves tiles laid out for the old width until it re-measures.
+let rsz;
+window.addEventListener('resize', () => {
+  clearTimeout(rsz);
+  rsz = setTimeout(() => map.invalidateSize(), 150);
+});
+
 load();
 setInterval(load, REFRESH_MS);
 setInterval(tickAge, 15000);
