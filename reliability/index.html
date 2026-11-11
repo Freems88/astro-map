@@ -98,8 +98,8 @@ h1{font:700 23px/1.05;letter-spacing:-.025em;margin:0}
     <div class="ctrl">
       <input class="srch" id="q" type="search" placeholder="Search a station by name&hellip;"
              aria-label="Search stations by name" autocomplete="off">
-      <label class="hide"><input type="checkbox" id="hideDead"> Hide low-traffic stations
-        (under 5 bikes/weekday)</label>
+      <label class="hide"><input type="checkbox" id="hideDead"> Hide stocked-but-unused
+        stations (bikes available, nobody takes them)</label>
     </div>
 
     <div class="legend" id="legend"></div>
@@ -168,7 +168,11 @@ function style(s){
     return {fill: ramp()[b], r: 5 + b*1.7, hollow:false};
   }
   const v = s[M.key], a = Math.abs(v);
-  if (s.turn < DEAD_TURN) return {fill:"transparent", r:3.4, hollow:true};
+  // Hollow = stocked but genuinely unused. Deliberately NOT applied to
+  // "starved" (chronically empty with real arrivals, where low turnover may be
+  // missing supply rather than missing demand) or "recreational" (busy at
+  // weekends, which a weekday metric understates by construction).
+  if (s.cls === "inert") return {fill:"transparent", r:3.4, hollow:true};
   if (a < M.breaks[0])    return {fill:INERT(), r:3.8, hollow:false};
   const strong = a >= M.breaks[1];
   return {fill: v > 0 ? BLUE() : RED(), r: strong ? 9.5 : 6.4, hollow:false};
@@ -176,8 +180,12 @@ function style(s){
 
 function popup(s){
   const cls = {strong_res:"strong residential", res:"residential", balanced:"busy &amp; balanced",
-               emp:"employment", strong_emp:"strong employment", dead:"low traffic"}[s.cls];
-  const col = s.cls==="dead" ? INERT()
+               emp:"employment", strong_emp:"strong employment", inert:"stocked but unused",
+               recreational:"weekend / recreational", starved:"chronically empty, real demand"
+              }[s.cls] || s.cls;
+  const col = s.cls==="inert" ? INERT()
+            : s.cls==="starved" ? RED()
+            : s.cls==="recreational" ? "#898781"
             : s.cls.includes("res") ? BLUE()
             : s.cls.includes("emp") ? RED() : "#898781";
   return '<span class="pt">'+esc(s.name)+'</span><div class="pg">'
@@ -200,7 +208,7 @@ function draw(){
   markers = new Map();
 
   const shown = ST.filter(s => (!q || s.name.toLowerCase().includes(q))
-                            && (!hd || s.turn >= DEAD_TURN));
+                            && (!hd || s.cls !== "inert"));
   shown.forEach(s => {
     const st = style(s);
     const m = L.circleMarker([s.lat, s.lon], {
