@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dock Roulette &middot; Toronto Bike Share reliability</title>
-<meta name="description" content="How often each Toronto Bike Share station is empty when you need a bike, or full when you need to park.">
+<title>Dock Roulette &middot; Toronto Bike Share stations</title>
+<meta name="description" content="How Toronto Bike Share stations behave: when they fail, whether they are commuter origins or destinations, and which ones bleed bikes downhill.">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,13 +14,13 @@
   --plane:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#898781;
   --grid:#e1e0d9; --rule:#c3c2b7;
   --s0:#86b6ef; --s1:#5598e7; --s2:#2a78d6; --s3:#1c5cab; --s4:#0d366b;
-  --accent:#2a78d6;
+  --blue:#2a78d6; --red:#e34948; --inert:#c3c2b7; --stroke:#fcfcfb;
 }
 @media (prefers-color-scheme:dark){:root{
   --plane:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --ink-3:#898781;
   --grid:#2c2c2a; --rule:#383835;
   --s0:#184f95; --s1:#256abf; --s2:#3987e5; --s3:#86b6ef; --s4:#cde2fb;
-  --accent:#5aa7ff;
+  --blue:#3987e5; --red:#e66767; --inert:#4a4a46; --stroke:#1a1a19;
 }}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
@@ -28,58 +28,55 @@ body{background:var(--plane);color:var(--ink);
   font:15px/1.5 "Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   -webkit-font-smoothing:antialiased}
 #app{display:flex;height:100%}
-#side{width:390px;flex:none;display:flex;flex-direction:column;
+#side{width:400px;flex:none;display:flex;flex-direction:column;
   background:var(--surface);border-right:1px solid var(--rule)}
 #map{flex:1;min-width:0;background:var(--plane)}
 
-header{padding:16px 18px 14px;border-bottom:1px solid var(--grid)}
+header{padding:15px 18px 13px;border-bottom:1px solid var(--grid)}
 .eyebrow{font:600 10px/1 "Public Sans";letter-spacing:.14em;text-transform:uppercase;
   color:var(--ink-3);margin:0 0 7px}
-h1{font:700 24px/1.05;letter-spacing:-.025em;margin:0}
-.lede{margin:7px 0 0;font-size:13px;color:var(--ink-2)}
-
-.modes{display:flex;margin:14px 0 0;border:1px solid var(--rule);border-radius:4px;overflow:hidden}
-.modes button{flex:1;appearance:none;border:0;background:var(--surface);color:var(--ink-2);
-  cursor:pointer;font:600 12.5px/1 "Public Sans";padding:11px 8px}
-.modes button+button{border-left:1px solid var(--rule)}
+h1{font:700 23px/1.05;letter-spacing:-.025em;margin:0}
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:1px;margin:13px 0 0;
+  background:var(--rule);border:1px solid var(--rule);border-radius:4px;overflow:hidden}
+.modes button{appearance:none;border:0;background:var(--surface);color:var(--ink-2);
+  cursor:pointer;font:600 12px/1.25 "Public Sans";padding:10px 7px}
 .modes button[aria-pressed="true"]{background:var(--s2);color:#fff}
 .modes button:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+.blurb{margin:11px 0 0;font-size:12.5px;color:var(--ink-2);line-height:1.45}
 
-.ctrl{padding:12px 18px;border-bottom:1px solid var(--grid);display:flex;flex-direction:column;gap:10px}
+.ctrl{padding:11px 18px;border-bottom:1px solid var(--grid)}
 .srch{display:block;width:100%;font:400 13.5px/1 "Public Sans";color:var(--ink);
   background:var(--plane);border:1px solid var(--rule);border-radius:4px;padding:9px 11px}
-.srch:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
-.thr{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ink-2)}
-.thr input[type=range]{flex:1;accent-color:var(--s2)}
-.thr b{font-variant-numeric:tabular-nums;min-width:42px;text-align:right;color:var(--ink)}
+.srch:focus-visible{outline:2px solid var(--blue);outline-offset:-1px}
+.hide{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:12.5px;color:var(--ink-2)}
 
-.legend{display:flex;flex-wrap:wrap;gap:3px 13px;padding:11px 18px;
+.legend{display:flex;flex-wrap:wrap;gap:3px 13px;padding:10px 18px;
   border-bottom:1px solid var(--grid);font-size:11.5px;color:var(--ink-2)}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;
-  vertical-align:-1px;box-shadow:0 0 0 1px rgba(0,0,0,.14)}
+  vertical-align:-1px;box-shadow:0 0 0 1px rgba(128,128,128,.45)}
+.legend i.ring{background:transparent!important;border:1.5px solid var(--inert)}
 
 #count{padding:9px 18px 0;font-size:12px;color:var(--ink-3)}
 #list{flex:1;overflow-y:auto;padding-bottom:10px}
 .row{display:flex;gap:11px;align-items:baseline;padding:9px 18px;cursor:pointer;
   border-bottom:1px solid var(--grid)}
 .row:hover,.row.on{background:var(--grid)}
-.pct{font:700 14px/1 "Public Sans";font-variant-numeric:tabular-nums;min-width:40px;color:var(--ink)}
+.val{font:700 14px/1 "Public Sans";font-variant-numeric:tabular-nums;min-width:52px}
 .nm{flex:1;font-size:13.5px;min-width:0}
 .sub{font-size:11.5px;color:var(--ink-3)}
 .empty{padding:22px 18px;color:var(--ink-3);font-size:13.5px}
 
-.leaflet-popup-content{font:13.5px/1.45 "Public Sans",sans-serif;margin:11px 13px}
-.leaflet-popup-content b.t{display:block;font-size:14.5px;margin-bottom:5px}
-.pp{display:flex;gap:14px;margin:7px 0 4px}
-.pp div{flex:1}
-.pp .v{font:700 19px/1 "Public Sans";font-variant-numeric:tabular-nums;display:block}
-.pp .l{font-size:11px;color:#666;display:block;margin-top:3px}
-.ppm{font-size:11.5px;color:#666;border-top:1px solid #ddd;padding-top:6px;margin-top:6px}
+.leaflet-popup-content{font:13.5px/1.45 "Public Sans",sans-serif;margin:11px 13px;min-width:210px}
+.pt{display:block;font-size:14.5px;font-weight:600;margin-bottom:6px}
+.pg{display:grid;grid-template-columns:auto auto;gap:3px 12px;font-size:12.5px;color:#555}
+.pg b{color:#111;font-variant-numeric:tabular-nums;text-align:right}
+.ptag{display:inline-block;margin-top:7px;padding:2px 7px;border-radius:3px;
+  font-size:11px;font-weight:600;color:#fff}
 
-@media(max-width:860px){
+@media(max-width:880px){
   #app{flex-direction:column}
-  #side{width:100%;height:54%;border-right:none;border-bottom:1px solid var(--rule)}
-  #map{height:46%}
+  #side{width:100%;height:56%;border-right:none;border-bottom:1px solid var(--rule)}
+  #map{height:44%}
 }
 </style>
 </head>
@@ -87,21 +84,22 @@ h1{font:700 24px/1.05;letter-spacing:-.025em;margin:0}
 <div id="app">
   <div id="side">
     <header>
-      <p class="eyebrow">Toronto Bike Share &middot; <span id="days">90</span>-day window</p>
+      <p class="eyebrow">Toronto Bike Share &middot; <span id="days">90</span> days &middot; weekdays</p>
       <h1>Dock Roulette</h1>
-      <p class="lede">How often a station fails you at the moment you need it. Weekdays only,
-      sampled every ~11 minutes.</p>
-      <div class="modes" role="group" aria-label="Failure mode">
-        <button id="bam" aria-pressed="true">Can&rsquo;t get a bike</button>
-        <button id="bpm" aria-pressed="false">Can&rsquo;t park</button>
+      <div class="modes" role="group" aria-label="View">
+        <button data-m="am" aria-pressed="true">Can&rsquo;t get a bike</button>
+        <button data-m="pm" aria-pressed="false">Can&rsquo;t park</button>
+        <button data-m="commute" aria-pressed="false">Commute pattern</button>
+        <button data-m="drain" aria-pressed="false">Daily drain</button>
       </div>
+      <p class="blurb" id="blurb"></p>
     </header>
 
     <div class="ctrl">
       <input class="srch" id="q" type="search" placeholder="Search a station by name&hellip;"
              aria-label="Search stations by name" autocomplete="off">
-      <label class="thr">Show stations failing at least <input id="thr" type="range"
-        min="0" max="80" step="5" value="0" aria-label="Minimum failure rate"> <b id="thrv">0%</b></label>
+      <label class="hide"><input type="checkbox" id="hideDead"> Hide low-traffic stations
+        (under 5 bikes/weekday)</label>
     </div>
 
     <div class="legend" id="legend"></div>
@@ -113,138 +111,160 @@ h1{font:700 24px/1.05;letter-spacing:-.025em;margin:0}
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-// Ordinal ramp from the project's reference palette (blue sequential), light
-// steps 250-700 and dark steps 600-100 so severity always reads against the
-// surface rather than receding into it.
+// Sequential ramp: reference blue, light steps 250-700 / dark 600-100, validated
+// with the ordinal checks. Diverging modes use two opposed hues only -- the
+// all-pairs cap for map-type charts is three slots, so magnitude rides on
+// marker size and low-traffic stations get a hollow ring rather than a hue.
 const RAMP_L = ["#86b6ef","#5598e7","#2a78d6","#1c5cab","#0d366b"];
 const RAMP_D = ["#184f95","#256abf","#3987e5","#86b6ef","#cde2fb"];
+const DEAD_TURN = 5;
+
 const MODES = {
-  am: {key:"am_empty_pct", n:"am_n", breaks:[5,15,30,50],
+  am: {kind:"seq", key:"am", breaks:[5,15,30,50], unit:"%",
        legend:["under 5%","5–15%","15–30%","30–50%","over 50%"],
-       what:"of mornings with no bikes", hours:"weekdays 07:00–09:59"},
-  pm: {key:"pm_full_pct", n:"pm_n", breaks:[1,5,15,30],
+       blurb:"Share of weekday mornings (07:00–09:59) with zero bikes.",
+       fmt:v=>v.toFixed(0)+"%", sort:(a,b)=>b.am-a.am},
+  pm: {kind:"seq", key:"pm", breaks:[1,5,15,30], unit:"%",
        legend:["under 1%","1–5%","5–15%","15–30%","over 30%"],
-       what:"of evenings with no free dock", hours:"weekdays 16:00–18:59"}
+       blurb:"Share of weekday evenings (16:00–18:59) with no free dock.",
+       fmt:v=>v.toFixed(0)+"%", sort:(a,b)=>b.pm-a.pm},
+  commute: {kind:"div", key:"amp", breaks:[2,6], unit:"",
+       blurb:"Tidal signature. Residential stations empty in the morning and refill at night; "+
+             "employment stations do the reverse. Size shows strength.",
+       fmt:v=>(v>0?"+":"")+v.toFixed(1), sort:(a,b)=>Math.abs(b.amp)-Math.abs(a.amp),
+       pos:"residential", neg:"employment",
+       legL:["strong employment","employment","balanced","residential","strong residential"]},
+  drain: {kind:"div", key:"rider", breaks:[0.75,2], unit:"",
+       blurb:"Net bikes gained or lost to riders over a whole weekday. Summing all hours "+
+             "cancels the commute, so what is left is structural — mostly gravity.",
+       fmt:v=>(v>0?"+":"")+v.toFixed(1), sort:(a,b)=>Math.abs(b.rider)-Math.abs(a.rider),
+       pos:"accumulates", neg:"drains",
+       legL:["drains hard","drains","steady","accumulates","accumulates hard"]}
 };
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const isDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
-const ramp = () => isDark() ? RAMP_D : RAMP_L;
-const band = (v, br) => { for (let i = 0; i < br.length; i++) if (v < br[i]) return i; return br.length; };
+const dark = () => matchMedia("(prefers-color-scheme: dark)").matches;
+const ramp = () => dark() ? RAMP_D : RAMP_L;
+const BLUE = () => dark() ? "#3987e5" : "#2a78d6";
+const RED  = () => dark() ? "#e66767" : "#e34948";
+const INERT = () => dark() ? "#4a4a46" : "#c3c2b7";
+const STROKE = () => dark() ? "#1a1a19" : "#fcfcfb";
 
-let STATIONS = [], mode = "am", markers = new Map(), selected = null;
+let ST = [], mode = "am", markers = new Map();
 
-const map = L.map("map", {zoomControl: true}).setView([43.70, -79.38], 11);
+const map = L.map("map").setView([43.70, -79.38], 11);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-  {maxZoom: 19, attribution: "&copy; OpenStreetMap contributors"}).addTo(map);
+  {maxZoom:19, attribution:"&copy; OpenStreetMap contributors"}).addTo(map);
 
-function val(s){ return s[MODES[mode].key]; }
-function samples(s){ return s[MODES[mode].n]; }
+function seqBand(v, br){ for (let i=0;i<br.length;i++) if (v<br[i]) return i; return br.length; }
 
-function popupHtml(s){
-  return '<b class="t">' + esc(s.name) + '</b>'
-    + '<div class="pp">'
-    +   '<div><span class="v">' + s.am_empty_pct + '%</span>'
-    +     '<span class="l">mornings<br>with no bikes</span></div>'
-    +   '<div><span class="v">' + s.pm_full_pct + '%</span>'
-    +     '<span class="l">evenings<br>with no free dock</span></div>'
-    + '</div>'
-    + '<div class="ppm">' + (s.capacity || "?") + ' docks · '
-    +   s.am_n.toLocaleString() + ' morning / ' + s.pm_n.toLocaleString() + ' evening readings'
-    +   '<br><a href="https://www.google.com/maps/dir/?api=1&destination='
-    +   s.lat + ',' + s.lon + '" target="_blank" rel="noopener">Directions →</a></div>';
+// returns {fill, r, hollow}
+function style(s){
+  const M = MODES[mode];
+  if (M.kind === "seq"){
+    const b = seqBand(s[M.key], M.breaks);
+    return {fill: ramp()[b], r: 5 + b*1.7, hollow:false};
+  }
+  const v = s[M.key], a = Math.abs(v);
+  if (s.turn < DEAD_TURN) return {fill:"transparent", r:3.4, hollow:true};
+  if (a < M.breaks[0])    return {fill:INERT(), r:3.8, hollow:false};
+  const strong = a >= M.breaks[1];
+  return {fill: v > 0 ? BLUE() : RED(), r: strong ? 9.5 : 6.4, hollow:false};
+}
+
+function popup(s){
+  const cls = {strong_res:"strong residential", res:"residential", balanced:"busy &amp; balanced",
+               emp:"employment", strong_emp:"strong employment", dead:"low traffic"}[s.cls];
+  const col = s.cls==="dead" ? INERT()
+            : s.cls.includes("res") ? BLUE()
+            : s.cls.includes("emp") ? RED() : "#898781";
+  return '<span class="pt">'+esc(s.name)+'</span><div class="pg">'
+    + '<span>Mornings with no bike</span><b>'+s.am.toFixed(0)+'%</b>'
+    + '<span>Evenings with no dock</span><b>'+s.pm.toFixed(0)+'%</b>'
+    + '<span>Bikes moved / weekday</span><b>'+s.turn.toFixed(0)+'</b>'
+    + '<span>Commute swing</span><b>'+(s.amp>0?"+":"")+s.amp.toFixed(1)+'</b>'
+    + '<span>Rider net / weekday</span><b>'+(s.rider>0?"+":"")+s.rider.toFixed(1)+'</b>'
+    + '<span>Van net / weekday</span><b>'+(s.truck>0?"+":"")+s.truck.toFixed(1)+'</b>'
+    + '<span>Elevation</span><b>'+s.elev+' m'+(s.rel!==null?' ('+(s.rel>0?"+":"")+s.rel+' local)':'')+'</b>'
+    + '</div><span class="ptag" style="background:'+col+'">'+cls+'</span>';
 }
 
 function draw(){
-  const M = MODES[mode], R = ramp();
+  const M = MODES[mode];
   const q = $("q").value.trim().toLowerCase();
-  const thr = +$("thr").value;
+  const hd = $("hideDead").checked;
 
   markers.forEach(m => m.remove());
   markers = new Map();
 
-  const shown = STATIONS.filter(s =>
-    val(s) >= thr && (!q || s.name.toLowerCase().includes(q)));
-
+  const shown = ST.filter(s => (!q || s.name.toLowerCase().includes(q))
+                            && (!hd || s.turn >= DEAD_TURN));
   shown.forEach(s => {
-    const b = band(val(s), M.breaks);
+    const st = style(s);
     const m = L.circleMarker([s.lat, s.lon], {
-      radius: 5 + b * 1.7, weight: 1.2, color: isDark() ? "#1a1a19" : "#fcfcfb",
-      fillColor: R[b], fillOpacity: .92
+      radius: st.r, weight: st.hollow ? 1.3 : 1.2,
+      color: st.hollow ? INERT() : STROKE(),
+      fillColor: st.hollow ? "transparent" : st.fill,
+      fillOpacity: st.hollow ? 0 : .92
     }).addTo(map);
-    m.bindPopup(popupHtml(s));
-    m.on("click", () => select(s.id, false));
+    m.bindPopup(popup(s));
     markers.set(s.id, m);
   });
 
-  $("legend").innerHTML = M.legend.map((t, i) =>
-    '<span><i style="background:' + R[i] + '"></i>' + t + '</span>').join("");
+  if (M.kind === "seq"){
+    $("legend").innerHTML = M.legend.map((t,i) =>
+      '<span><i style="background:'+ramp()[i]+'"></i>'+t+'</span>').join("");
+  } else {
+    const cols = [RED(), RED(), INERT(), BLUE(), BLUE()];
+    $("legend").innerHTML = M.legL.map((t,i) =>
+      '<span><i style="background:'+cols[i]+'"></i>'+t+'</span>').join("")
+      + '<span><i class="ring"></i>low traffic</span>';
+  }
+  $("blurb").textContent = M.blurb;
 
-  const worst = [...shown].sort((a, b) => val(b) - val(a));
-  $("count").textContent = shown.length + " of " + STATIONS.length
-    + " stations · " + M.hours;
-  $("list").innerHTML = worst.length ? worst.slice(0, 250).map(s =>
-    '<div class="row" data-id="' + s.id + '">'
-    + '<span class="pct">' + val(s) + '%</span>'
-    + '<span class="nm">' + esc(s.name)
-    +   '<span class="sub"><br>' + (s.capacity || "?") + ' docks · '
-    +   samples(s).toLocaleString() + ' readings</span></span></div>').join("")
+  const sorted = [...shown].sort(M.sort);
+  $("count").textContent = shown.length + " of " + ST.length + " stations";
+  $("list").innerHTML = sorted.length ? sorted.slice(0,250).map(s =>
+    '<div class="row" data-id="'+s.id+'"><span class="val">'+M.fmt(s[M.key])+'</span>'
+    + '<span class="nm">'+esc(s.name)+'<span class="sub"><br>'
+    + (s.cap||"?")+' docks · '+s.turn.toFixed(0)+' bikes/weekday'
+    + (s.rel!==null ? ' · '+(s.rel>0?"+":"")+s.rel+'m local' : '')
+    + '</span></span></div>').join("")
     : '<p class="empty">No stations match.</p>';
 
-  document.querySelectorAll(".row").forEach(el =>
-    el.addEventListener("click", () => select(+el.dataset.id, true)));
-}
-
-function select(id, fly){
-  selected = id;
-  document.querySelectorAll(".row").forEach(el =>
-    el.classList.toggle("on", +el.dataset.id === id));
-  const m = markers.get(id);
-  if (!m) return;
-  if (fly){
-    map.setView(m.getLatLng(), Math.max(map.getZoom(), 15), {animate: true});
+  document.querySelectorAll(".row").forEach(el => el.addEventListener("click", () => {
+    const m = markers.get(+el.dataset.id);
+    if (!m) return;
+    map.setView(m.getLatLng(), Math.max(map.getZoom(), 15));
     m.openPopup();
-  }
-  const row = document.querySelector('.row[data-id="' + id + '"]');
-  if (row && !fly) row.scrollIntoView({block: "nearest"});
+  }));
 }
 
-function setMode(m){
-  mode = m;
-  $("bam").setAttribute("aria-pressed", String(m === "am"));
-  $("bpm").setAttribute("aria-pressed", String(m === "pm"));
-  // thresholds differ wildly between modes (PM median is 0.3%), so reset
-  $("thr").value = 0; $("thrv").textContent = "0%";
-  draw();
-}
-
-$("bam").addEventListener("click", () => setMode("am"));
-$("bpm").addEventListener("click", () => setMode("pm"));
+document.querySelectorAll(".modes button").forEach(b =>
+  b.addEventListener("click", () => {
+    mode = b.dataset.m;
+    document.querySelectorAll(".modes button").forEach(x =>
+      x.setAttribute("aria-pressed", String(x === b)));
+    draw();
+  }));
 $("q").addEventListener("input", draw);
-$("thr").addEventListener("input", () => { $("thrv").textContent = $("thr").value + "%"; draw(); });
+$("hideDead").addEventListener("change", draw);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
 
-// Leaflet caches its container size; re-measure when the viewport changes
-// (phone rotation, desktop resize) or tiles lay out at the old width.
+// Leaflet caches container size; re-measure on viewport change (phone rotation).
 let rsz;
-addEventListener("resize", () => {
-  clearTimeout(rsz);
-  rsz = setTimeout(() => map.invalidateSize(), 150);
-});
+addEventListener("resize", () => { clearTimeout(rsz); rsz = setTimeout(() => map.invalidateSize(), 150); });
 
-fetch("data.json", {cache: "no-cache"})
-  .then(r => { if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.json(); })
+fetch("data.json", {cache:"no-cache"})
+  .then(r => { if (!r.ok) throw new Error(r.status+" "+r.statusText); return r.json(); })
   .then(d => {
-    STATIONS = d.stations;
-    $("days").textContent = d.days;
+    ST = d.stations; $("days").textContent = d.days;
     draw();
     map.invalidateSize();
-    map.fitBounds(L.latLngBounds(STATIONS.map(s => [s.lat, s.lon])).pad(0.04));
+    map.fitBounds(L.latLngBounds(ST.map(s => [s.lat, s.lon])).pad(0.04));
   })
-  .catch(e => {
-    $("list").innerHTML = '<p class="empty">Couldn’t load the data.<br>' + esc(e.message) + '</p>';
-  });
+  .catch(e => { $("list").innerHTML = '<p class="empty">Couldn’t load the data.<br>'+esc(e.message)+'</p>'; });
 </script>
 </body>
 </html>
