@@ -135,8 +135,9 @@ const MODES = {
        pos:"residential", neg:"employment",
        legL:["strong employment","employment","balanced","residential","strong residential"]},
   drain: {kind:"div", key:"rider", breaks:[0.75,2], unit:"",
-       blurb:"Net bikes gained or lost to riders over a whole weekday. Summing all hours "+
-             "cancels the commute, so what is left is structural — mostly gravity.",
+       blurb:"Net bikes gained or lost to riders over a whole weekday — the one-way demand "+
+             "vans have to keep correcting. Height relative to nearby stations explains part "+
+             "of it (r = −0.22), not most of it.",
        fmt:v=>(v>0?"+":"")+v.toFixed(1), sort:(a,b)=>Math.abs(b.rider)-Math.abs(a.rider),
        pos:"accumulates", neg:"drains",
        legL:["drains hard","drains","steady","accumulates","accumulates hard"]}
