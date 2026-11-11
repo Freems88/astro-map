@@ -40,6 +40,7 @@ h1{font:700 23px/1.05;letter-spacing:-.025em;margin:0}
   background:var(--rule);border:1px solid var(--rule);border-radius:4px;overflow:hidden}
 .modes button{appearance:none;border:0;background:var(--surface);color:var(--ink-2);
   cursor:pointer;font:600 12px/1.25 "Public Sans";padding:10px 7px}
+.modes button.wide{grid-column:1 / -1}
 .modes button[aria-pressed="true"]{background:var(--s2);color:#fff}
 .modes button:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
 .blurb{margin:11px 0 0;font-size:12.5px;color:var(--ink-2);line-height:1.45}
@@ -91,6 +92,7 @@ h1{font:700 23px/1.05;letter-spacing:-.025em;margin:0}
         <button data-m="pm" aria-pressed="false">Can&rsquo;t park</button>
         <button data-m="commute" aria-pressed="false">Commute pattern</button>
         <button data-m="drain" aria-pressed="false">Daily drain</button>
+        <button data-m="idle" aria-pressed="false" class="wide">Idle capacity</button>
       </div>
       <p class="blurb" id="blurb"></p>
     </header>
@@ -140,7 +142,13 @@ const MODES = {
              "of it (r = −0.22), not most of it.",
        fmt:v=>(v>0?"+":"")+v.toFixed(1), sort:(a,b)=>Math.abs(b.rider)-Math.abs(a.rider),
        pos:"accumulates", neg:"drains",
-       legL:["drains hard","drains","steady","accumulates","accumulates hard"]}
+       legL:["drains hard","drains","steady","accumulates","accumulates hard"]},
+  idle: {kind:"idle", key:"cap",
+       blurb:"Docks sitting where almost nobody rides. Usage is counted from actual "+
+             "trips (all days, so weekend stations are not penalised); a station counts "+
+             "as idle under 5 trips a day with bikes usually available. Circle size is "+
+             "dock count.",
+       fmt:v=>v+" docks", sort:(a,b)=>(b.cap||0)-(a.cap||0)}
 };
 
 const $ = id => document.getElementById(id);
@@ -163,6 +171,12 @@ function seqBand(v, br){ for (let i=0;i<br.length;i++) if (v<br[i]) return i; re
 // returns {fill, r, hollow}
 function style(s){
   const M = MODES[mode];
+  if (M.kind === "idle"){
+    // One hue, two levels: idle stations filled and sized by docks, the rest
+    // recede. Nothing here needs a second colour.
+    if (s.cls !== "inert") return {fill:INERT(), r:2.6, hollow:false};
+    return {fill: RED(), r: 4 + Math.sqrt(s.cap || 1) * 1.7, hollow:false};
+  }
   if (M.kind === "seq"){
     const b = seqBand(s[M.key], M.breaks);
     return {fill: ramp()[b], r: 5 + b*1.7, hollow:false};
@@ -221,7 +235,19 @@ function draw(){
     markers.set(s.id, m);
   });
 
-  if (M.kind === "seq"){
+  if (M.kind === "idle"){
+    const idle = shown.filter(s => s.cls === "inert");
+    const docks = idle.reduce((a,s) => a + (s.cap||0), 0);
+    const allDocks = ST.reduce((a,s) => a + (s.cap||0), 0);
+    const tIdle = idle.reduce((a,s) => a + (s.trips_day||0), 0);
+    const tAll = ST.reduce((a,s) => a + (s.trips_day||0), 0);
+    $("legend").innerHTML =
+      '<span><i style="background:'+RED()+'"></i>idle station (size = docks)</span>'
+      + '<span><i style="background:'+INERT()+'"></i>everything else</span>'
+      + '<span style="flex-basis:100%;margin-top:4px;color:var(--ink)"><b>'
+      + docks.toLocaleString()+'</b> docks ('+(100*docks/allDocks).toFixed(1)+'% of the network) '
+      + 'carrying <b>'+(100*tIdle/tAll).toFixed(1)+'%</b> of all trips</span>';
+  } else if (M.kind === "seq"){
     $("legend").innerHTML = M.legend.map((t,i) =>
       '<span><i style="background:'+ramp()[i]+'"></i>'+t+'</span>').join("");
   } else {
@@ -232,13 +258,21 @@ function draw(){
   }
   $("blurb").textContent = M.blurb;
 
-  const sorted = [...shown].sort(M.sort);
-  $("count").textContent = shown.length + " of " + ST.length + " stations";
+  // The idle list is only about idle stations; showing the other 893 would bury them.
+  const listed = M.kind === "idle" ? shown.filter(s => s.cls === "inert") : shown;
+  const sorted = [...listed].sort(M.sort);
+  $("count").textContent = M.kind === "idle"
+    ? listed.length + " idle stations of " + ST.length
+    : shown.length + " of " + ST.length + " stations";
   $("list").innerHTML = sorted.length ? sorted.slice(0,250).map(s =>
-    '<div class="row" data-id="'+s.id+'"><span class="val">'+M.fmt(s[M.key])+'</span>'
+    '<div class="row" data-id="'+s.id+'"><span class="val">'
+    + (M.kind === "idle" ? (s.cap||0) : M.fmt(s[M.key])) + '</span>'
     + '<span class="nm">'+esc(s.name)+'<span class="sub"><br>'
-    + (s.cap||"?")+' docks · '+s.turn.toFixed(0)+' bikes/weekday'
-    + (s.rel!==null ? ' · '+(s.rel>0?"+":"")+s.rel+'m local' : '')
+    + (M.kind === "idle"
+        ? 'docks · ' + (s.trips_day ?? 0).toFixed(1) + ' trips/day · bikes present '
+          + (100 - (s.empty_all ?? 0)).toFixed(0) + '% of the time'
+        : (s.cap||"?")+' docks · '+s.turn.toFixed(0)+' bikes/weekday'
+          + (s.rel!==null ? ' · '+(s.rel>0?"+":"")+s.rel+'m local' : ''))
     + '</span></span></div>').join("")
     : '<p class="empty">No stations match.</p>';
 
