@@ -179,6 +179,12 @@ function style(s){
   }
   if (M.kind === "seq"){
     const b = seqBand(s[M.key], M.breaks);
+    // An idle station being empty fails nobody -- Lawrence East is empty 87%
+    // of mornings on 0.0 trips a day. Rendering it as dark as a station that
+    // turns over 50 bikes made this view actively misleading, so idle
+    // stations go hollow and the solid marks are failures that cost someone
+    // a ride.
+    if (s.cls === "inert") return {fill:"transparent", r:3.2, hollow:true};
     return {fill: ramp()[b], r: 5 + b*1.7, hollow:false};
   }
   const v = s[M.key], a = Math.abs(v);
@@ -249,7 +255,8 @@ function draw(){
       + 'carrying <b>'+(100*tIdle/tAll).toFixed(1)+'%</b> of all trips</span>';
   } else if (M.kind === "seq"){
     $("legend").innerHTML = M.legend.map((t,i) =>
-      '<span><i style="background:'+ramp()[i]+'"></i>'+t+'</span>').join("");
+      '<span><i style="background:'+ramp()[i]+'"></i>'+t+'</span>').join("")
+      + '<span><i class="ring"></i>idle — empty, but nobody is waiting</span>';
   } else {
     const cols = [RED(), RED(), INERT(), BLUE(), BLUE()];
     $("legend").innerHTML = M.legL.map((t,i) =>
